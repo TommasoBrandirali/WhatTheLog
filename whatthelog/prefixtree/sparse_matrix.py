@@ -1,18 +1,21 @@
 import bisect
-from whatthelog.exceptions import StateDoesNotExistException
 from typing import Union, Tuple, Any, List
 
+from whatthelog.auto_printer import AutoPrinter
 
-class SparseMatrix:
+
+class SparseMatrix(AutoPrinter):
     """
     As we had no efficient way to store the edges, we implemented our own approach to achieve this.
     """
 
     separator = '.'
 
-    def __init__(self):
+    def __init__(self, init_list: List = None):
         # The list in which the sparse matrix is stored
-        self.list: List[str] = list()
+        if init_list is None:
+            init_list = []
+        self.list: List[str] = init_list
 
     def __setitem__(self, key: Tuple[int, int], value: Any) -> None:
         """
@@ -68,7 +71,7 @@ class SparseMatrix:
         :param coordinates: the coordinates of the entry to find.
         :return the value of the input entry, or None if no entry found.
         """
-        return self.get_values(self.find_index(coordinates))[2]
+        return self.get_values(self.list, self.find_index(coordinates))[2]
 
     def __find_children(self, search_list: List[str], item: int,
                         new_parent: int = -1) -> Union[
@@ -80,11 +83,13 @@ class SparseMatrix:
         :param item: the item to match on.
         :return a list of tuples (child_number, value), or None if no child found.
         """
+
         index: int = self.bisearch(search_list, str(item) + self.separator)
         to_delete = []
         to_change = []
 
         if index != len(search_list):
+
             current = self.get_values(search_list, index)
 
             if new_parent >= 0:
@@ -196,6 +201,50 @@ class SparseMatrix:
 
         return result
 
+    def get_weights_list(self, remove_self_loops: bool = False) -> List[Tuple[int, int, float]]:
+        """
+        Returns a list of entries with the properties normalized by parent.
+
+        :param remove_self_loops: if True the output will not contain reflexive entries
+                                  (entries with equal coordinates)
+        :return: a list of tuples in the form (from, to, normalized_weight)
+        """
+
+        if not self.list:
+            return []
+
+        output = []
+        curr_entries = []
+        curr_parent = int(self.list[0].split('.', 2)[0])
+
+        for entry in self.list:
+
+            start, end, passes = entry.split('.', 2)
+            start, end, passes = int(start), int(end), float(passes)
+
+            if remove_self_loops and start == end:
+                continue
+
+            if start == curr_parent:
+                # --- Keep caching edges with same origin ---
+                curr_entries.append((start, end, passes))
+            else:
+                # --- Flush edges with same origin, compute normalized weights and add to output ---
+                total = sum(i for _, _, i in curr_entries)
+                for current in curr_entries:
+                    output.append((current[0], current[1], current[2]/total))
+
+                # --- Restart caching edges ---
+                curr_parent = start
+                curr_entries = [(start, end, passes)]
+
+        # --- Flush edges with same origin, compute normalized weights and add to output ---
+        total = sum(i for _, _, i in curr_entries)
+        for current in curr_entries:
+            output.append((current[0], current[1], 1 - (current[2]/total)))
+
+        return output
+
     def get_parents(self, i: int):
         return self.__get_parents(i)
 
@@ -212,3 +261,6 @@ class SparseMatrix:
 
     def __str__(self):
         return str(self.list)
+
+    def __deepcopy__(self, memodict={}):
+        return SparseMatrix([entry for entry in self.list])

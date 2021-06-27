@@ -1,9 +1,9 @@
 from copy import deepcopy
-from typing import List, Tuple
+from typing import List
 
 from whatthelog.exceptions import StateDoesNotExistException
 from whatthelog.prefixtree.edge_properties import EdgeProperties
-from whatthelog.prefixtree.graph import Graph
+from whatthelog.prefixtree.adjacency_graph import AdjacencyGraph
 import pytest
 
 from whatthelog.prefixtree.state import State
@@ -17,9 +17,8 @@ def graph():
     state3 = State(["3"])
     state4 = State(["4"])
 
-    graph = Graph(state0)
+    graph = AdjacencyGraph(None, state0)
 
-    graph.add_state(state0)
     graph.add_state(state1)
     graph.add_state(state2)
     graph.add_state(state3)
@@ -38,9 +37,9 @@ def fully_connected_graph():
     # A fully connected 4 state graph.
     states: List[State] = [State(["0"]), State(["1"]), State(["2"]), State(["3"])]
 
-    graph: Graph = Graph()
+    graph: AdjacencyGraph = AdjacencyGraph(None, states[0])
 
-    for state in states:
+    for state in states[1:]:
         graph.add_state(state)
 
     for state in states:
@@ -60,9 +59,9 @@ def graph_2():
 
     states: List[State] = [s0, s1, s2, s3, s4]
 
-    graph: Graph = Graph()
+    graph: AdjacencyGraph = AdjacencyGraph(None, states[0])
 
-    for state in states:
+    for state in states[1:]:
         graph.add_state(state)
 
     graph.add_edge(s0, s0)
@@ -74,20 +73,20 @@ def graph_2():
     return graph
 
 
-def test_get_state_by_id(graph: Graph):
+def test_get_state_by_id(graph: AdjacencyGraph):
     state = graph.states[0]
 
     assert graph.get_state_by_id(id(state)) == state
 
 
-def test_get_state_by_hash_incorrect(graph: Graph):
+def test_get_state_by_hash_incorrect(graph: AdjacencyGraph):
     state = State(["other"])
 
     with pytest.raises(StateDoesNotExistException):
         graph.get_state_by_id(id(state))
 
 
-def test_add_state(graph: Graph):
+def test_add_state(graph: AdjacencyGraph):
     new_state = State(["5"])
 
     assert len(graph.states) == 5
@@ -99,19 +98,18 @@ def test_add_state(graph: Graph):
 
 
 def test_add_state_properties_pointers():
-    graph = Graph()
     state1 = State(["prop"])
     state2 = State(["prop"])
 
-    graph.add_state(state1)
+    graph = AdjacencyGraph(None, state1)
     graph.add_state(state2)
 
-    assert graph.size() == 2
+    assert len(graph) == 2
     assert id(state1.properties) == id(state2.properties)
     assert id(state1) != id(state2)
 
 
-def test_add_edge(graph: Graph):
+def test_add_edge(graph: AdjacencyGraph):
     state1 = graph.states[1]
     state2 = graph.states[2]
     assert state2 not in graph.get_outgoing_states(state1)
@@ -121,38 +119,25 @@ def test_add_edge(graph: Graph):
     assert state2 in graph.get_outgoing_states(state1)
 
 
-def test_add_edge_incorrect(graph: Graph):
+def test_add_edge_incorrect(graph: AdjacencyGraph):
     state1 = State(["other"])
 
     assert graph.add_edge(state1, graph.states[0], EdgeProperties()) is False
     assert graph.add_edge(graph.states[0], state1, EdgeProperties()) is False
 
 
-def test_size(graph: Graph):
-    assert graph.size() == len(graph.states)
+def test_size(graph: AdjacencyGraph):
+    assert len(graph) == len(graph.states)
 
 
-def test_get_outgoing_props():
-    graph = Graph()
-    state1 = State(["1"])
-    state2 = State(["2"])
-    graph.add_state(state1)
-    graph.add_state(state2)
-
-    props = EdgeProperties(["50"])
-    graph.add_edge(state1, state2, props)
-
-    assert graph.get_outgoing_props(state1) == [props]
-
-
-def test_get_outgoing_states(graph: Graph):
+def test_get_outgoing_states(graph: AdjacencyGraph):
     state0 = graph.states[0]
 
     assert len(graph.get_outgoing_states(state0)) == 3
     assert graph.states[1] in graph.get_outgoing_states(state0)
 
 
-def test_merge_states(graph: Graph):
+def test_merge_states(graph: AdjacencyGraph):
     state1 = graph.states[1]
     state3 = graph.states[3]
 
@@ -165,7 +150,7 @@ def test_merge_states(graph: Graph):
     assert graph.get_outgoing_states(state1)[0] == state1
 
 
-def test_merge_states2(graph: Graph):
+def test_merge_states2(graph: AdjacencyGraph):
     state0 = graph.states[0]
     state3 = graph.states[3]
 
@@ -182,102 +167,14 @@ def test_merge_states2(graph: Graph):
     assert graph.start_node == state3
 
 
-def test_merge_states3(graph: Graph):
+def test_merge_states3(graph: AdjacencyGraph):
     state2 = graph.states[2]
     state4 = graph.states[4]
 
     graph.merge_states(state2, state4)
-    print(graph.edges.list)
 
     assert len(graph.states) == 4
     assert state2.properties.log_templates == ["2", "4"]
     assert graph.state_indices_by_id[id(state2)] == 2
     assert id(state4) not in graph.state_indices_by_id.keys()
     assert state2 in graph.get_outgoing_states(graph.states[0])
-
-
-def test_complex_merge_1(fully_connected_graph: Graph):
-    fully_connected_graph.merge_states(fully_connected_graph.states[0],
-                                       fully_connected_graph.states[1])
-
-    new_node = fully_connected_graph.states[0]
-
-    assert len(fully_connected_graph.states) == 3
-    assert new_node.properties.log_templates == ["0", "1"]
-
-    for state in fully_connected_graph.states.values():
-        for other_state in fully_connected_graph.states.values():
-            assert state in fully_connected_graph.get_outgoing_states(other_state)
-
-
-def test_complex_merge_2(graph_2: Graph):
-    graph_2.full_merge_states(graph_2.states[0],
-                              graph_2.states[1])
-
-    new_node = graph_2.states[2]
-    
-    assert len(graph_2) == 3
-    assert new_node.properties.log_templates == ["0", "1"]
-
-
-def test_complex_merge_3(graph_2: Graph):
-    graph_2.full_merge_states(graph_2.states[0],
-                              graph_2.states[3])
-
-    new_node = graph_2.states[1]
-
-    assert len(graph_2) == 1
-    assert set(new_node.properties.log_templates) == {"0", "1", "2"}
-
-
-def test_complex_merge_4(graph_2: Graph):
-    s5: State = State(["1"])
-    graph_2.add_state(s5)
-    graph_2.add_edge(s5, s5)
-    graph_2.add_edge(s5, graph_2.states[0])
-
-    graph_2.full_merge_states(graph_2.states[0],
-                              graph_2.states[3])
-    new_node = graph_2.states[4]
-    assert len(graph_2) == 1
-    assert set(new_node.properties.log_templates) == {"0", "1", "2"}
-
-
-def test_complex_merge_5(graph_2: Graph):
-    s5: State = State(["1"])
-    s6: State = State(["2"])
-    s7: State = State(["0"])
-
-    graph_2.add_state(s5)
-    graph_2.add_state(s6)
-    graph_2.add_state(s7)
-
-    graph_2.add_edge(s5, s5)
-    graph_2.add_edge(s5, graph_2.states[0])
-    graph_2.add_edge(s5, s6)
-    graph_2.add_edge(s7, s6)
-    graph_2.add_edge(s7, s7)
-
-    graph_2.full_merge_states(graph_2.states[0],
-                              graph_2.states[3])
-
-    new_node = list(graph_2.states.values())[0]
-    assert len(graph_2) == 1
-    assert set(new_node.properties.log_templates) == {"0", "1", "2"}
-
-
-def test_merge_equivalent_children_self():
-    state0 = State(["0"])
-    state1 = State(["1", "0"])
-
-    graph: Graph = Graph()
-
-    graph.add_state(state0)
-    graph.add_state(state1)
-
-    graph.add_edge(state0, state1)
-    graph.add_edge(state0, state0)
-
-    graph.merge_equivalent_children(state0)
-
-    assert len(graph) == 1

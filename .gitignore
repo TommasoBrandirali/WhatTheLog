@@ -70,7 +70,9 @@ MANIFEST
 !tests/resources/testlogs/xx*
 
 # Resources
+resources/temp
 resources/traces*
+resources/train_set
 resources/prefixtree.png
 
 # Temporary Files

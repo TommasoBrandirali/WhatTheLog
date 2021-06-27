@@ -17,20 +17,19 @@ def tree() -> PrefixTree:
         PROJECT_ROOT.joinpath("resources/config.json"))
     return tree
 
-
 def test_one_trace(tree: PrefixTree):
     traces_path = "tests/resources/traces_single"
 
     with open(PROJECT_ROOT.joinpath(traces_path).joinpath("xx1"), 'r') as file:
         lines = len(file.readlines())
 
-    assert tree.size() == lines + 2
+    assert len(tree) == lines + 1
 
     root = tree.get_root()
     assert root.properties.log_templates == [""]
 
     child2 = None
-    for i in range(tree.size() - 1):
+    for i in range(len(tree) - 1):
         if i == 2:
             child2 = root
         assert len(tree.get_children(root)) == 1
@@ -66,7 +65,6 @@ def test_pickle(tree: PrefixTree):
 
     pt = PrefixTreeFactory.unpickle_tree(pickle_file_path)
 
-    assert pt.edges.list == tree.edges.list
     for x, y in zip(tree.states.values(), pt.states.values()):
         assert x.is_equivalent(y)
 
@@ -79,7 +77,7 @@ def test_remove_trivial_loops_single_file():
         PROJECT_ROOT.joinpath(traces_path),
         PROJECT_ROOT.joinpath("resources/config.json"),
         True)
-    assert tree.size() == 14  # 12 + root + terminal
+    assert len(tree) == 13  # 12 + root
 
 
 def test_remove_trivial_loops_several():
@@ -89,7 +87,7 @@ def test_remove_trivial_loops_several():
         PROJECT_ROOT.joinpath("resources/config.json"),
         True)
 
-    assert tree.size() == 41  # 35 + root + terminal * 5
+    assert len(tree) == 36  # 35 + root
 
 
 

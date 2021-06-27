@@ -19,3 +19,17 @@ class StateAlreadyExistsException(Exception):
 @dataclass(frozen=True)
 class StateDoesNotExistException(Exception):
     message: str = field(default="State does not exist in graph")
+
+@dataclass(frozen=True)
+class InvalidPropertiesException(Exception):
+    message: str = field(default="Serialized edge properties are not a tuple")
+
+@dataclass(frozen=True)
+class NonDeterminismException(Exception):
+    message: str = field(default="Tree is non-deterministic")
+
+
+@dataclass(frozen=True)
+class InvalidEdgeException(Exception):
+    message: str = field(default="Edge was missing from 1 of 2 dicts")
+

@@ -20,11 +20,10 @@ import pathlib
 import random
 import sys
 from time import time
-from typing import List
+from typing import List, Union
 import tracemalloc
 from tqdm import tqdm
 
-from scripts.match_trace import match_trace
 from whatthelog.prefixtree.prefix_tree import PrefixTree
 
 sys.path.insert(0, "./../")
@@ -210,7 +209,7 @@ def produce_false_trace(input_file: str, output_file: str, syntax_tree: SyntaxTr
             func(lines, syntax_tree)
 
         # While the produced log is still accepted, continue scrambling it
-        while match_trace(state_model, lines.copy(), syntax_tree):
+        while state_model.match_trace(lines.copy()):
             n_mutations = random.randint(1, 3)
             mutations = [random.choice([delete_one, swap, r_swap]) for _ in range(n_mutations)]
 
@@ -222,15 +221,39 @@ def produce_false_trace(input_file: str, output_file: str, syntax_tree: SyntaxTr
     with open(output_file, 'w+') as f:
         f.writelines(lines)
 
+def shorten_eval_traces(syntax_tree: SyntaxTree, directory: Union[str, pathlib.Path]):
+
+    for file in os.listdir(directory):
+        new_lines = []
+
+        with open(os.path.join(directory, file), 'r') as f:
+            previous = None
+            for line in f.readlines():
+                current = syntax_tree.search(line).name
+                if previous != current:
+                    previous = None
+                    new_lines.append(line)
+                    prev_name = syntax_tree.search(new_lines[len(new_lines) - 2]).name
+                    if len(new_lines) >= 2 and prev_name == current:
+                        prev = prev_name
+                        if prev == current:
+                            previous = current
+
+        os.remove(os.path.join(directory, file))
+        with open(os.path.join(directory, file), 'w+') as f:
+            f.writelines(new_lines)
+
 
 def main(argv):
+
+    project_root = pathlib.Path(os.path.abspath(os.path.dirname(__file__))).parent
     start_time = time()
     tracemalloc.start()
 
     assert len(argv) > 1, "Not enough arguments supplied!"
 
-    input_dir = argv[0]
-    output_dir = argv[1]
+    input_dir = project_root.joinpath(argv[0])
+    output_dir = project_root.joinpath(argv[1])
     config_file = argv[2] if len(argv) > 2 else config_default
     pool_size = argv[3] if len(argv) > 3 else pool_size_default
 
@@ -242,13 +265,17 @@ def main(argv):
              for name in os.listdir(input_dir)
              if os.path.isfile(os.path.join(input_dir, name))]
 
-    # --- Parse prefix tree ---
-    print("[ Log Filter ] - Parsing configuration file...")
+    # --- Parse syntax tree ---
+    print("Parsing configuration file...")
     parser = SyntaxTreeFactory()
     tree = parser.parse_file(config_file)
 
+    # --- Shorten true traces (remove sections with more than 2 consecutive duplicate lines) ---
+    print("Shortening true traces...")
+    shorten_eval_traces(tree, input_dir)
+
     # --- Run filtering ---
-    print("[ Log Filter ] - Filtering logs...")
+    print("Filtering logs...")
     finished = False
     pbar = tqdm(total=len(files), file=sys.stdout, leave=False)
     while not finished:
@@ -267,12 +294,12 @@ def main(argv):
 
         pbar.update(curr_n_files)
 
-    print(f"[ Log Filter ] - Done!")
-    print(f"[ Log Filter ] - Time elapsed: {timedelta(seconds=time() - start_time)}")
+    print(f"Done!")
+    print(f"Time elapsed: {timedelta(seconds=time() - start_time)}")
 
     snapshot = tracemalloc.take_snapshot()
     total = get_peak_mem(snapshot)
-    print(f"[ Log Filter ] - Peak memory usage: {bytes_tostring(total)}")
+    print(f"Peak memory usage: {bytes_tostring(total)}")
 
 
 if __name__ == "__main__":

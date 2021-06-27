@@ -7,14 +7,15 @@
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 from __future__ import annotations
-from typing import List, Union
+from typing import List, Union, Tuple
 
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Internal
 #++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+from whatthelog.syntaxtree.syntax_tree import SyntaxTree
 from whatthelog.prefixtree.edge_properties import EdgeProperties
-from whatthelog.prefixtree.graph import Graph
+from whatthelog.prefixtree.adjacency_graph import AdjacencyGraph
 from whatthelog.prefixtree.state import State
 from whatthelog.exceptions import InvalidTreeException
 
@@ -23,17 +24,16 @@ from whatthelog.exceptions import InvalidTreeException
 # Prefix Tree
 #****************************************************************************************************
 
-class PrefixTree(Graph):
+class PrefixTree(AdjacencyGraph):
     """
     Prefix tree implemented using an adjacency map-based graph.
     """
 
-    __slots__ = ['__root']
+    __slots__ = ['syntax_tree', 'states', 'state_indices_by_id', 'prop_by_hash',
+                 'start_node', 'outgoing_edges', 'incoming_edges']
 
-    def __init__(self, root: State):
-        super().__init__(root)
-        self.__root = root
-        self.add_state(root)
+    def __init__(self, syntax_tree: SyntaxTree, root: State):
+        super().__init__(syntax_tree, root)
 
     def get_root(self) -> State:
         """
@@ -41,7 +41,7 @@ class PrefixTree(Graph):
 
         :return: the root of the tree
         """
-        return self.__root
+        return self.start_node
 
     def get_children(self, state: State) -> List[State]:
         """
@@ -52,7 +52,7 @@ class PrefixTree(Graph):
         """
         return self.get_outgoing_states(state)
 
-    def add_child(self, state: State, parent: State, props: EdgeProperties = EdgeProperties([])):
+    def add_child(self, state: State, parent: State, props: EdgeProperties = EdgeProperties()):
         """
         Method to add a child in the tree.
         Requires that the parent be in the current tree.
@@ -95,19 +95,18 @@ class PrefixTree(Graph):
         """
         Method to get the parent of a state.
         WARNING: This method is O(n) were n is the number of edges in the tree!
-
         :param state: State to get parent of
         :return: Parent of state. If None state is the root.
         """
 
         assert state in self
-        parents = self.edges.get_parents(self.state_indices_by_id[id(state)])
+        parents = self.get_incoming_states(state)
         assert len(parents) <= 1, "Edge has more than one parent!"
 
         if parents is None or len(parents) == 0:
             return None
         else:
-            return self.states[parents[0]]
+            return parents[0]
 
     def merge(self, other: PrefixTree):
         """
@@ -119,10 +118,10 @@ class PrefixTree(Graph):
         :param other: the tree to be merged into this one.
         """
 
-        if not self.__root.is_equivalent(other.get_root()):
+        if not self.start_node.is_equivalent(other.get_root()):
             raise InvalidTreeException("Merge failed: source tree does not have same root as destination tree!")
 
-        stack = [(self.__root, other.get_root())]
+        stack = [(self.start_node, other.get_root())]
         while True:
 
             this_state, that_state = stack.pop()
@@ -139,29 +138,3 @@ class PrefixTree(Graph):
 
             if not stack:
                 break
-
-
-#****************************************************************************************************
-# Prefix Tree Iterator
-#****************************************************************************************************
-
-class TreeIterator:
-    """
-    Iterator class for the tree.
-    Return states in a Breadth-First Search.
-    """
-
-    def __init__(self, tree: PrefixTree):
-        self.tree = tree
-        self.queue = [tree.get_root()]
-
-    def __next__(self):
-
-        if not self.queue:
-            raise StopIteration
-
-        current = self.queue.pop(0)
-        for child in self.tree.get_children(current):
-            self.queue.append(child)
-
-        return current

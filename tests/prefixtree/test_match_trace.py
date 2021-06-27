@@ -1,14 +1,15 @@
-import random
 import pytest
-import copy
-
-from scripts.match_trace import match_trace
-from whatthelog.prefixtree.prefix_tree import PrefixTree, State
-from whatthelog.syntaxtree.syntax_tree import SyntaxTree
 from typing import List
 
+from whatthelog.prefixtree.edge_properties import EdgeProperties
+from whatthelog.prefixtree.prefix_tree import PrefixTree, State
+from whatthelog.syntaxtree.syntax_tree import SyntaxTree
+from whatthelog.exceptions import UnidentifiedLogException
+from whatthelog.auto_printer import AutoPrinter
 
-@pytest.fixture()
+def print(msg): AutoPrinter.static_print(msg)
+
+
 def syntax_tree() -> SyntaxTree:
     t: SyntaxTree = SyntaxTree("p0", "[p0]", False)
     t.insert(SyntaxTree("p0p1", "[p1]", False))
@@ -20,6 +21,7 @@ def syntax_tree() -> SyntaxTree:
     tp4.insert(SyntaxTree("p0p4p1", "[p1]", False))
     tp4.insert(SyntaxTree("p0p4p2", "[p2]", False))
     tp4.insert(SyntaxTree("p0p4p3", "[p3]", False))
+    tp4.insert(SyntaxTree("p0p4p5", "[p5]", False))
 
     assert t.search("[p0][p1]") == SyntaxTree("p0p1", "[p1]", False), "Invalid Prefix Tree implementation"
     assert t.search("[p0][p2]") == SyntaxTree("p0p2", "[p2]", False), "Invalid Prefix Tree implementation"
@@ -35,19 +37,11 @@ def state_tree() -> PrefixTree:
     t2: State = State(["p0p4p1"])
     t3: State = State(["p0p4p2", "p0p4p3", "p0p4p0"])
 
-    p_tree: PrefixTree = PrefixTree(State([]))
+    p_tree: PrefixTree = PrefixTree(syntax_tree(), State([]))
     p_tree.add_child(t0, p_tree.get_root())
     p_tree.add_child(t2, t0)
     p_tree.add_child(t1, t0)
     p_tree.add_child(t3, t2)
-
-    # t0: PrefixTree = PrefixTree(State([0]), None)
-    # t1: PrefixTree = PrefixTree(State([1, 2]), t0)
-    # t0.add_child(t1)
-    # t2: PrefixTree = PrefixTree(State([3]), t1)
-    # t0.add_child(t2)
-    # t3: PrefixTree = PrefixTree(State([4, 6, 5]), t2)
-    # t2.add_child(t3)
 
     """
             Graph structure:
@@ -100,143 +94,121 @@ def traces_t3() -> List[List[str]]:
     ]
 
 
-def test_match_trace_empty_trace(state_tree, traces_t0, syntax_tree):
+def test_match_trace_empty_trace(state_tree):
     """
     Tests the match_trace function on an empty trace
     """
-    trace = []
-    expected_result = []
 
-    res = match_trace(state_tree, trace, syntax_tree)
-    assert res == expected_result, "Non-empty result " + res.__str__()
+    assert not state_tree.match_trace([]), "Non-empty result!"
 
 
-def test_match_trace_fail_root(state_tree, traces_t0, syntax_tree):
+def test_match_trace_fail_root(state_tree, traces_t0):
     """
     Tests the match_trace function on a trace that fails to match in the first line
     """
-    expected_result = None
 
     for count, t in enumerate(traces_t0):
         t[0] = "fail" + t[0]
-        res = match_trace(state_tree, t, syntax_tree)
-        assert expected_result == res, "Succeeded root matching on an illegal trace"
+        with pytest.raises(UnidentifiedLogException):
+            state_tree.match_trace(t)
 
 
-def test_match_trace_root(state_tree, traces_t0, syntax_tree):
+def test_match_trace_root(state_tree, traces_t0):
     """
     Tests the match_trace function on a trace that succeeds with exactly 1 line
     """
+
     t0 = state_tree.get_children(state_tree.get_root())[0]
-    expected_path = [[t0]]
+
     for count, t in enumerate(traces_t0):
 
-        res = match_trace(state_tree, t, syntax_tree)
-
         # As long as the root is not terminal, no path should exist
-        assert res is None, "Incorrectly matched a non-terminal path"
+        assert not state_tree.match_trace(t), "Incorrectly matched a non-terminal path"
 
-        # Add a terminal state to the children of the root
-        state_tree.add_child(State(["terminal"], True), t0)
-        res = match_trace(state_tree, t, syntax_tree)
+        # Make t0 terminal
+        t0.is_terminal = True
 
         # There should now be a matching path that ends in a terminal state
-        assert res == expected_path[count - 1], "Failed to match the first line to the root"
+        assert state_tree.match_trace(t, debug=True), "Failed to match the first line to the root"
 
 
-def test_match_trace_traversal_1(state_tree, traces_t1, syntax_tree):
+def test_match_trace_traversal_1(state_tree, traces_t1):
     """
     Tests the match_trace function on an accepted longer trace
     """
-    t0 = state_tree.get_children(state_tree.get_root())[0]
-    t1 = state_tree.get_children(t0)[1]
 
     for count, t in enumerate(traces_t1):
-        res = match_trace(state_tree, t, syntax_tree)
-        assert res is None, "Failed multi-state traversal"
+        assert not state_tree.match_trace(t), "Failed multi-state traversal"
 
 
-def test_match_trace_traversal_no_terminal_1(state_tree, traces_t1, syntax_tree):
+def test_match_trace_traversal_no_terminal_1(state_tree, traces_t1):
     """
     Tests the match_trace function on a real trace that does not end in a terminal state
     """
+
     t0 = state_tree.get_children(state_tree.get_root())[0]
     t1 = state_tree.get_children(t0)[1]
 
-    expected_path = [[t0, t1]] * 2
-
-    state_tree.add_child(State(["terminal"], True), t1)
+    t1.is_terminal = True
 
     for count, t in enumerate(traces_t1):
-        res1 = match_trace(state_tree, t, syntax_tree)
-        assert expected_path[count] == res1, "Failed multi-state traversal"
+        assert state_tree.match_trace(t, True), "Failed multi-state traversal"
 
 
-def test_match_trace_fail_traversal_2(state_tree, traces_t2, syntax_tree):
+def test_match_trace_fail_traversal_2(state_tree, traces_t2):
     """
     Tests the match_trace function on an a trace that fails at its second line
     """
-    expected_result = None
 
     for count, t in enumerate(traces_t2):
         t[1] = "fail" + t[1]
-        res = match_trace(state_tree, t, syntax_tree)
-        assert expected_result == res, "Succeeded multi-state traversal on an illegal trace"
+        with pytest.raises(UnidentifiedLogException):
+            state_tree.match_trace(t)
 
 
-def test_match_trace_single_traversal_no_terminal_2(state_tree, traces_t2, syntax_tree):
+def test_match_trace_single_traversal_no_terminal_2(state_tree, traces_t2):
     """
     Tests the match_trace function on an accepted longer trace that does not end in a terminal state
     """
-    t0 = state_tree.get_children(state_tree.get_root())[0]
-    t2 = state_tree.get_children(t0)[0]
+
     for count, t in enumerate(traces_t2):
-        res = match_trace(state_tree, t, syntax_tree)
-        assert res is None, "Failed multi-state traversal"
+        assert not state_tree.match_trace(t), "Trace matched without terminal state closure"
 
 
-def test_match_trace_single_traversal_2(state_tree, traces_t2, syntax_tree):
+def test_match_trace_single_traversal_2(state_tree, traces_t2):
     """
     Tests the match_trace function on an accepted longer trace
     """
+
     t0 = state_tree.get_children(state_tree.get_root())[0]
     t2 = state_tree.get_children(t0)[0]
-    expected_path = [[t0, t2]]
-
-    state_tree.add_child(State(["terminal"], True), t2)
+    t2.is_terminal = True
 
     for count, t in enumerate(traces_t2):
-        res = match_trace(state_tree, t, syntax_tree)
-        assert expected_path[count - 1] == res, "Failed multi-state traversal"
+        assert state_tree.match_trace(t), "Failed multi-state traversal"
 
 
-def test_match_trace_fail_traversal_3(state_tree, traces_t3, syntax_tree):
+def test_match_trace_fail_traversal_3(state_tree, traces_t3):
     """
     Tests the match_trace function on a trace that fails to match at a later line
     """
-    expected_result = None
 
     for count, t in enumerate(traces_t3):
         t[2] = "fail" + t[2]
-        res = match_trace(state_tree, t, syntax_tree)
-        assert expected_result == res, "Succeeded multi-state traversal on an illegal trace"
+        with pytest.raises(UnidentifiedLogException):
+            state_tree.match_trace(t)
 
 
-def test_match_trace_traversal_no_terminal_3(state_tree, traces_t3, syntax_tree):
+def test_match_trace_traversal_no_terminal_3(state_tree, traces_t3):
     """
     Tests the match_trace function on an accepted longer trace that does not end in a terminal state
     """
-    root: State = state_tree.get_root()
-    t0 = state_tree.get_children(root)[0]
-    t2 = state_tree.get_children(t0)[0]
-    t3 = state_tree.get_children(t2)[0]
 
     for count, t in enumerate(traces_t3):
-        res = match_trace(state_tree, t, syntax_tree)
-        assert res is None, "Failed multi-state traversal"
+        assert not state_tree.match_trace(t), "Failed multi-state traversal"
 
 
-def test_match_trace_traversal_3(state_tree, traces_t3, syntax_tree):
+def test_match_trace_traversal_3(state_tree, traces_t3):
     """
     Tests the match_trace function on an accepted longer trace
     """
@@ -244,38 +216,33 @@ def test_match_trace_traversal_3(state_tree, traces_t3, syntax_tree):
     t0 = state_tree.get_children(root)[0]
     t2 = state_tree.get_children(t0)[0]
     t3 = state_tree.get_children(t2)[0]
+    t3.is_terminal = True
 
-    state_tree.add_child(State(["terminal"], True), t3)
-
-    expected_path = [[t0, t2, t3]] * 3
     for count, t in enumerate(traces_t3):
-        res = match_trace(state_tree, t, syntax_tree)
-        assert expected_path[count - 1] == res, "Failed multi-state traversal"
+        assert state_tree.match_trace(t), "Failed multi-state traversal"
 
 
-def test_match_trace_no_successor_root(state_tree, syntax_tree):
+def test_match_trace_no_successor_root(state_tree):
     """
     Tests the match_trace function on a trace that has no successor state after the first line
     """
+
     trace = ["[p0][p1]", "[p0][p4][p0]"]    # 0 - 3: Invalid transition
-    expected_result = None
 
-    res = match_trace(state_tree, trace, syntax_tree)
-    assert expected_result == res, "Non-empty result" + res.__str__()
+    assert not state_tree.match_trace(trace), "Non-empty result!"
 
 
-def test_match_trace_no_successor_rec_1(state_tree, syntax_tree):
+def test_match_trace_no_successor_rec_1(state_tree):
     """
     Tests the match_trace function on a trace that has no successor state after the second line
     """
+
     trace = ["[p0][p1]", "[p0][p4][p1]", "[p0][p1]"]   # 0 - 3: Invalid transition
-    expected_result = None
 
-    res = match_trace(state_tree, trace, syntax_tree)
-    assert expected_result == res, "Non-empty result" + res.__str__()
+    assert not state_tree.match_trace(trace), "Non-empty result!"
 
 
-def test_match_trace_no_successor_rec_2(state_tree, syntax_tree):
+def test_match_trace_no_successor_rec_2(state_tree):
     """
     Tests the match_trace function on a trace that has no successor state after a later line
     """
@@ -286,7 +253,5 @@ def test_match_trace_no_successor_rec_2(state_tree, syntax_tree):
     t4: State = State(["p0p1"])
     state_tree.add_child(t4, t3)
     trace = ["[p0][p1]", "[p0][p4][p1]", "[p0][p4][p0]", "[p0][p4][p1]"]
-    expected_result = None
 
-    res = match_trace(state_tree, trace, syntax_tree)
-    assert expected_result == res, "Non-empty result" + res.__str__()
+    assert not state_tree.match_trace(trace), "Non-empty result!"
