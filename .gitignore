@@ -64,3 +64,17 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Log files
+*.log
+!tests/resources/testlogs/xx*
+
+# Resources
+resources/temp
+resources/traces*
+resources/train_set
+resources/prefixtree.png
+
+# Temporary Files
+temp/
+*.backup
